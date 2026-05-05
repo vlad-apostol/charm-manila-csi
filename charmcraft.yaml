@@ -1,0 +1,123 @@
+# This file configures Charmcraft.
+# See https://documentation.ubuntu.com/charmcraft/stable/reference/files/charmcraft-yaml-file/
+type: charm
+name: manila-csi
+title: Manila CSI
+summary: Deploys the Manila CSI and NFS CSI drivers for OpenStack Manila integration.
+description: |
+  This subordinate charm deploys the Manila CSI and NFS CSI drivers, enabling Kubernetes
+  clusters to use OpenStack Manila file shares as persistent storage for workloads.
+
+  The charm manages:
+  - NFS CSI driver deployment via Helm chart (optional)
+  - Manila CSI driver deployment via Helm chart
+  - Storage class configuration for Manila-backed persistent volumes
+  - Integration with OpenStack secrets for authentication
+
+# Documentation:
+# https://documentation.ubuntu.com/charmcraft/stable/howto/build-guides/select-platforms/
+platforms:
+  ubuntu@24.04:amd64:
+  ubuntu@22.04:amd64:
+
+parts:
+  charm:
+    plugin: uv
+    source: .
+    build-snaps:
+      - astral-uv
+    override-build: |
+      craftctl default
+      cp ${CRAFT_PART_SRC}/dispatch ${CRAFT_PART_INSTALL}/dispatch
+      cp -r ${CRAFT_PART_SRC}/charts ${CRAFT_PART_INSTALL}/charts
+      cp -r ${CRAFT_PART_SRC}/manifests ${CRAFT_PART_INSTALL}/manifests
+    prime:
+      - dispatch
+      - src/
+      - venv/
+      - charts/
+      - manifests/
+
+# Configuration options for the charm
+config:
+  options:
+    manila-share-protocol:
+      description: |
+        The Manila share protocol selector for the storage class.
+        Common values: "CEPHFS" or "NFS" or "cephfsnfs".
+      default: "cephfsnfs"
+      type: string
+
+    storage-class-name:
+      description: |
+        Name of the storage class to create for Manila volumes.
+      default: "manila-nfs"
+      type: string
+
+    manila-csi-release-name:
+      description: |
+        Helm release name for the Manila CSI driver.
+      default: "manila-csi"
+      type: string
+
+    nfs-csi-release-name:
+      description: |
+        Helm release name for the NFS CSI driver.
+      default: "nfs-csi"
+      type: string
+
+    deploy-nfs-csi:
+      description: |
+        Whether to deploy the NFS CSI driver alongside Manila CSI.
+
+        Set to 'false' if the environment does not already have the NFS CSI driver
+        deployed.
+
+        Set to 'true' (default) to deploy the NFS CSI driver. This is required
+        for the Manila CSI to function.
+
+        IMPORTANT: Only one NFS CSI controller should run per cluster.
+        The NFS CSI driver operates in one-to-many mode (single controller
+        serves the entire cluster). If NFS CSI is already deployed by another
+        application or charm, set this to 'false' to avoid conflicts.
+      default: true
+      type: boolean
+
+    manila-csi-namespace:
+      description: |
+        Kubernetes namespace for Manila CSI components.
+      default: "kube-system"
+      type: string
+
+    cloud-controller-config-secret:
+      description: |
+        Name of the Kubernetes secret created by the OpenStack cloud-controller-manager
+        that contains the OpenStack credentials in cloud.conf format (b64-encoded).
+        The charm will read this secret and create the 'openstack-manila-secret' secret needed
+        by the Manila CSI driver.
+      default: "cloud-controller-config"
+      type: string
+
+    cloud-controller-config-namespace:
+      description: |
+        Kubernetes namespace where the cloud-controller-config secret lives.
+        Typically the same namespace as the cloud-controller-manager (e.g. kube-system).
+      default: "kube-system"
+      type: string
+
+# Resources for Helm charts
+resources:
+  manila-csi-chart:
+    description: |
+      Manila CSI Helm chart (tarball). If not provided, uses chart from `charts/` directory.
+    type: file
+    filename: manila-csi-chart.tgz
+
+  nfs-csi-chart:
+    description: |
+      NFS CSI Helm chart (tarball). If not provided, uses chart from `charts/` directory.
+    type: file
+    filename: nfs-csi-chart.tgz
+
+assumes:
+  - juju >= 3.0
