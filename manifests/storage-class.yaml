@@ -1,0 +1,21 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: manila-nfs
+provisioner: manila.csi.openstack.org
+parameters:
+  # Manila share type - should match your Manila backend
+  type: "cephfsnfstype"
+  shareAccessLevel: "rw"
+  shareAccessType: "ip"
+  
+  # Reference to the openstack-manila-secret containing OpenStack credentials
+  csi.storage.k8s.io/provisioner-secret-name: "openstack-manila-secret"
+  csi.storage.k8s.io/provisioner-secret-namespace: "kube-system"
+  csi.storage.k8s.io/node-stage-secret-name: "openstack-manila-secret"
+  csi.storage.k8s.io/node-stage-secret-namespace: "kube-system"
+  csi.storage.k8s.io/node-publish-secret-name: "openstack-manila-secret"
+  csi.storage.k8s.io/node-publish-secret-namespace: "kube-system"
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
