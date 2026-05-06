@@ -68,7 +68,7 @@ def test_config_changed(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
     # Check that configuration was passed correctly (values match charmcraft.yaml defaults)
     config = configure_called[0]
-    assert config["manila_share_protocol"] == "cephfsnfs"
+    assert config["manila_share_protocol"] == "cephfsnfstype"
     assert config["storage_class_name"] == "manila-nfs"
     assert config["namespace"] == "kube-system"
 
