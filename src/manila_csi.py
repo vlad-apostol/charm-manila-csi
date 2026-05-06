@@ -166,8 +166,11 @@ class ManilaCsiManager:
 
         logger.info("Manila CSI components removed")
 
-    def is_ready(self) -> bool:
+    def is_ready(self, namespace: str) -> bool:
         """Check if Manila CSI is ready.
+
+        Args:
+            namespace: Kubernetes namespace where Manila CSI is deployed
 
         Returns:
             True if Manila CSI is deployed and ready
@@ -182,9 +185,9 @@ class ManilaCsiManager:
                     "get",
                     "pods",
                     "-n",
-                    "kube-system",
+                    namespace,
                     "-l",
-                    "app=manila-csi",
+                    "release=manila-csi",
                     "-o",
                     "json",
                 ],

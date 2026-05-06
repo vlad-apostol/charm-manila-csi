@@ -80,7 +80,7 @@ def test_update_status_ready(monkeypatch: pytest.MonkeyPatch):
     state_in = testing.State()
 
     # Mock the manager methods
-    def mock_is_ready(self):
+    def mock_is_ready(self, namespace):
         return True
 
     def mock_install(self):
@@ -103,7 +103,7 @@ def test_update_status_not_ready(monkeypatch: pytest.MonkeyPatch):
     state_in = testing.State()
 
     # Mock the manager methods
-    def mock_is_ready(self):
+    def mock_is_ready(self, namespace):
         return False
 
     def mock_install(self):
