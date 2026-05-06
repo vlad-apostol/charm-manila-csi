@@ -110,6 +110,8 @@ class ManilaCsiCharm(ops.CharmBase):
                 "nfs_csi_release": self.config["nfs-csi-release-name"],
                 "deploy_nfs_csi": self.config["deploy-nfs-csi"],
                 "namespace": self.config["manila-csi-namespace"],
+                "storage_class_name": self.config["storage-class-name"],
+                "secret_name": "openstack-manila-secret"
             }
             self.manager.remove(config)
         except Exception as e:
