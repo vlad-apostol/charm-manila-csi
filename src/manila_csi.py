@@ -464,7 +464,7 @@ class ManilaCsiManager:
             values_file=values_file if values_file.exists() else None,
         )
         logger.info("Manila CSI deployed successfully")
-        self._wait_for_deployment(namespace, "manila-csi")
+        self._wait_for_deployment(namespace, f"release={release_name}")
 
     def _deploy_nfs_csi(self, config: dict[str, Any]) -> None:
         """Deploy NFS CSI by rendering the Helm chart and applying the manifests.
@@ -498,7 +498,7 @@ class ManilaCsiManager:
             values_file=values_file if values_file.exists() else None,
         )
         logger.info("NFS CSI deployed successfully")
-        self._wait_for_deployment(namespace, "nfs-csi")
+        self._wait_for_deployment(namespace, f"app.kubernetes.io/instance={release_name}")
 
     def _create_storage_class(self, config: dict[str, Any]) -> None:
         """Create Manila storage class.
@@ -528,7 +528,7 @@ class ManilaCsiManager:
                 "apiVersion": "storage.k8s.io/v1",
                 "kind": "StorageClass",
                 "metadata": {"name": storage_class_name},
-                "provisioner": "manila.csi.openstack.org",
+                    "provisioner": "nfs.manila.csi.openstack.org",
                 "parameters": {
                     "type": protocol,
                     "csi.storage.k8s.io/provisioner-secret-name": "openstack-manila-secret",
@@ -689,9 +689,11 @@ class ManilaCsiManager:
 
         Args:
             namespace: Kubernetes namespace
-            label_selector: Label selector for pods
+            label_selector: Full label selector string (e.g. 'release=foo' or
+                'app.kubernetes.io/instance=foo')
             timeout: Timeout in seconds
         """
+
         logger.info("Waiting for deployment with label '%s' to be ready", label_selector)
         start_time = time.time()
 
@@ -707,7 +709,7 @@ class ManilaCsiManager:
                         "-n",
                         namespace,
                         "-l",
-                        f"app.kubernetes.io/instance={label_selector}",
+                        label_selector,
                         "-o",
                         "json",
                     ],
