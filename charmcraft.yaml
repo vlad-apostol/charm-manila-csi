@@ -5,7 +5,7 @@ name: manila-csi
 title: Manila CSI
 summary: Deploys the Manila CSI and NFS CSI drivers for OpenStack Manila integration.
 description: |
-  This subordinate charm deploys the Manila CSI and NFS CSI drivers, enabling Kubernetes
+  This principal charm deploys the Manila CSI and NFS CSI drivers, enabling Kubernetes
   clusters to use OpenStack Manila file shares as persistent storage for workloads.
 
   The charm manages:
@@ -51,18 +51,27 @@ config:
     storage-class-name:
       description: |
         Name of the storage class to create for Manila volumes.
+
+        IMMUTABLE: set this before deploying. Changing it after deploy creates a new
+        StorageClass without removing the old one.
       default: "manila-nfs"
       type: string
 
     manila-csi-release-name:
       description: |
         Helm release name for the Manila CSI driver.
+
+        IMMUTABLE: set this before deploying. Changing it after deploy leaves resources
+        from the previous release name in place.
       default: "manila-csi"
       type: string
 
     nfs-csi-release-name:
       description: |
         Helm release name for the NFS CSI driver.
+
+        IMMUTABLE: set this before deploying. Changing it after deploy leaves resources
+        from the previous release name in place.
       default: "nfs-csi"
       type: string
 
@@ -70,22 +79,25 @@ config:
       description: |
         Whether to deploy the NFS CSI driver alongside Manila CSI.
 
-        Set to 'false' if the environment does not already have the NFS CSI driver
-        deployed.
+        Set to 'true' (default) to deploy the NFS CSI driver alongside Manila CSI.
+        Set to 'false' if NFS CSI is already deployed by another application or charm,
+        to avoid running multiple NFS CSI controllers in the cluster.
 
-        Set to 'true' (default) to deploy the NFS CSI driver. This is required
-        for the Manila CSI to function.
+        IMMUTABLE: set this before deploying. Switching from 'true' to 'false' after
+        deploy does not uninstall an already-running NFS CSI driver.
 
         IMPORTANT: Only one NFS CSI controller should run per cluster.
         The NFS CSI driver operates in one-to-many mode (single controller
-        serves the entire cluster). If NFS CSI is already deployed by another
-        application or charm, set this to 'false' to avoid conflicts.
+        serves the entire cluster).
       default: true
       type: boolean
 
     manila-csi-namespace:
       description: |
         Kubernetes namespace for Manila CSI components.
+
+        IMMUTABLE: set this before deploying. Changing it after deploy leaves all
+        existing resources in the old namespace in place.
       default: "kube-system"
       type: string
 
