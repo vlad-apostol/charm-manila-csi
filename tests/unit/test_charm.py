@@ -96,6 +96,35 @@ def test_update_status_ready(monkeypatch: pytest.MonkeyPatch):
     assert state_out.unit_status == testing.ActiveStatus("Manila CSI ready (with NFS CSI)")
 
 
+def test_remove(monkeypatch: pytest.MonkeyPatch):
+    """Test that the charm passes the correct config to manager.remove on remove event."""
+    # Arrange:
+    ctx = testing.Context(ManilaCsiCharm)
+    state_in = testing.State()
+
+    remove_called = []
+
+    def mock_remove(self, config):
+        remove_called.append(config)
+
+    def mock_install(self):
+        pass
+
+    monkeypatch.setattr("manila_csi.ManilaCsiManager.remove", mock_remove)
+    monkeypatch.setattr("manila_csi.ManilaCsiManager.install", mock_install)
+
+    # Act:
+    ctx.run(ctx.on.remove(), state_in)
+
+    # Assert:
+    assert len(remove_called) == 1
+    config = remove_called[0]
+    assert "storage_class_name" in config
+    assert config["storage_class_name"] == "manila-nfs"
+    assert "namespace" in config
+    assert config["namespace"] == "kube-system"
+
+
 def test_update_status_not_ready(monkeypatch: pytest.MonkeyPatch):
     """Test that the charm reports waiting status when CSI is not ready."""
     # Arrange:
