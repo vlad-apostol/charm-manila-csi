@@ -2,7 +2,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: manila-nfs
-provisioner: manila.csi.openstack.org
+provisioner: nfs.manila.csi.openstack.org
 parameters:
   # Manila share type - should match your Manila backend
   type: "cephfsnfstype"

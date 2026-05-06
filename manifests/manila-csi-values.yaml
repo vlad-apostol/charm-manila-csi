@@ -12,3 +12,25 @@ shareProtocols:
 
 csimanila:
   pvcAnnotations: true
+
+controllerplugin:
+  volumes: 
+    - name: cloud-config
+      secret:
+        defaultMode: 0420
+        secretName: cloud-controller-config
+  volumeMounts:
+    - mountPath: /etc/config
+      name: cloud-config
+      readOnly: true
+
+nodeplugin:   
+  volumes:
+    - name: cloud-config
+      secret:
+        defaultMode: 0420
+        secretName: cloud-controller-config
+  volumeMounts:
+    - mountPath: /etc/config  
+      name: cloud-config
+      readOnly: true  

@@ -44,8 +44,8 @@ config:
     manila-share-protocol:
       description: |
         The Manila share protocol selector for the storage class.
-        Common values: "CEPHFS" or "NFS" or "cephfsnfs".
-      default: "cephfsnfs"
+        Common values: "CEPHFS" or "NFS" or "cephfsnfstype".
+      default: "cephfsnfstype"
       type: string
 
     storage-class-name:
