@@ -530,7 +530,7 @@ class ManilaCsiManager:
                 "apiVersion": "storage.k8s.io/v1",
                 "kind": "StorageClass",
                 "metadata": {"name": storage_class_name},
-                    "provisioner": "nfs.manila.csi.openstack.org",
+                "provisioner": "nfs.manila.csi.openstack.org",
                 "parameters": {
                     "type": protocol,
                     "csi.storage.k8s.io/provisioner-secret-name": self.MANILA_SECRET_NAME,
