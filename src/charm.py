@@ -90,7 +90,7 @@ class ManilaCsiCharm(ops.CharmBase):
     def _on_update_status(self, event: ops.UpdateStatusEvent):
         """Handle update-status event."""
         try:
-            if self.manager.is_ready(self.config["manila-csi-namespace"]):
+            if self.manager.is_ready(str(self.config["manila-csi-namespace"])):
                 nfs_status = (
                     "with NFS CSI" if self.config["deploy-nfs-csi"] else "NFS CSI: external"
                 )
