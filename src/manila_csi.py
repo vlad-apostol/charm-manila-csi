@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 class ManilaCsiManager:
     """Manager for Manila CSI and NFS CSI driver deployments."""
 
+    MANILA_SECRET_NAME = "openstack-manila-secret"
+
     def __init__(self, charm_dir: Path, app_name: str, model_name: str):
         """Initialize the Manila CSI manager.
 
@@ -162,7 +164,7 @@ class ManilaCsiManager:
         self._delete_storage_class(config["storage_class_name"])
 
         # Remove the openstack-manila-secret created during configure
-        self._delete_secret("openstack-manila-secret", namespace)
+        self._delete_secret(self.MANILA_SECRET_NAME, namespace)
 
         logger.info("Manila CSI components removed")
 
@@ -344,7 +346,7 @@ class ManilaCsiManager:
         Raises:
             RuntimeError: If the source secret is missing or has no usable data.
         """
-        dest_secret_name = "openstack-manila-secret"
+        dest_secret_name = self.MANILA_SECRET_NAME
 
         logger.info(
             "Reading '%s' from namespace '%s'",
@@ -531,11 +533,11 @@ class ManilaCsiManager:
                     "provisioner": "nfs.manila.csi.openstack.org",
                 "parameters": {
                     "type": protocol,
-                    "csi.storage.k8s.io/provisioner-secret-name": "openstack-manila-secret",
+                    "csi.storage.k8s.io/provisioner-secret-name": self.MANILA_SECRET_NAME,
                     "csi.storage.k8s.io/provisioner-secret-namespace": config["namespace"],
-                    "csi.storage.k8s.io/node-stage-secret-name": "openstack-manila-secret",
+                    "csi.storage.k8s.io/node-stage-secret-name": self.MANILA_SECRET_NAME,
                     "csi.storage.k8s.io/node-stage-secret-namespace": config["namespace"],
-                    "csi.storage.k8s.io/node-publish-secret-name": "openstack-manila-secret",
+                    "csi.storage.k8s.io/node-publish-secret-name": self.MANILA_SECRET_NAME,
                     "csi.storage.k8s.io/node-publish-secret-namespace": config["namespace"],
                 },
                 "allowVolumeExpansion": True,
@@ -631,8 +633,11 @@ class ManilaCsiManager:
         """
         logger.info("Removing release '%s' from namespace '%s'", release_name, namespace)
 
-        chart_name = "manila-csi" if "manila" in release_name else "nfs-csi"
-        chart_path = self._find_local_chart(chart_name)
+        is_manila = "manila" in release_name
+        chart_lookup = "openstack-manila-csi" if is_manila else "csi-driver-nfs"
+        values_name = "manila-csi" if is_manila else "nfs-csi"
+
+        chart_path = self._find_local_chart(chart_lookup)
         if chart_path is None:
             logger.warning(
                 "Chart not found for release '%s', skipping removal",
@@ -640,7 +645,7 @@ class ManilaCsiManager:
             )
             return
 
-        values_file = self.manifests_dir / f"{chart_name}-values.yaml"
+        values_file = self.manifests_dir / f"{values_name}-values.yaml"
 
         cmd = [
             "helm",
