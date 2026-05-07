@@ -186,5 +186,30 @@ actions:
     required:
       - i-really-mean-it
 
+  snapshot-restore:
+    description: |
+      Restore a VolumeSnapshot to a new PVC.
+      The PVC is created in the same namespace as the snapshot.
+      If a PVC with the original name already exists, the restored PVC is named
+      {{original-pvc-name}}-restored-{{datetime}} instead.
+      Storage size is resolved automatically from the snapshot annotations.
+      Pass 'size' to override the resolved value.
+    params:
+      snapshot-name:
+        type: string
+        description: Name of the VolumeSnapshot to restore.
+      namespace:
+        type: string
+        description: Namespace where the snapshot lives.
+      size:
+        type: string
+        description: |
+          Optional storage size override (e.g. "20Gi").
+          If omitted the charm resolves size from the snapshot annotations,
+          VolumeSnapshotContent, or source PVC (falling back to "10Gi").
+    required:
+      - snapshot-name
+      - namespace
+
 assumes:
   - juju >= 3.0

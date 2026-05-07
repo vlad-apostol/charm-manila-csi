@@ -883,12 +883,38 @@ class ManilaCsiManager:
         created: list[dict] = []
 
         for pvc in pvcs:
+            # Query the PVC for its actual provisioned size so we can annotate the snapshot —
+            # this lets restore work even if the PVC is deleted later.
+            pvc_result = subprocess.run(
+                [
+                    "sudo",
+                    "k8s",
+                    "kubectl",
+                    "get",
+                    "pvc",
+                    pvc["name"],
+                    "-n",
+                    pvc["namespace"],
+                    "-o",
+                    "json",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            pvc_data = yaml.safe_load(pvc_result.stdout) if pvc_result.returncode == 0 else {}
+            pvc_spec = pvc_data.get("spec", {})
+            storage_size = pvc_data.get("status", {}).get("capacity", {}).get(
+                "storage"
+            ) or pvc_spec.get("resources", {}).get("requests", {}).get("storage", "10Gi")
+
             ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
             snapshot_name = f"{pvc['name']}-snapshot-{ts}"
             manifest = (
                 template.replace("{{SNAPSHOT_NAME}}", snapshot_name)
                 .replace("{{SNAPSHOT_NAMESPACE}}", pvc["namespace"])
                 .replace("{{SOURCE_PVC}}", pvc["name"])
+                .replace("{{STORAGE_SIZE}}", storage_size)
             )
             apply_result = subprocess.run(
                 ["sudo", "k8s", "kubectl", "apply", "-f", "-"],
@@ -1027,3 +1053,126 @@ class ManilaCsiManager:
                 target["namespace"],
             )
         return deleted
+
+    def _resolve_restore_pvc_name(self, source_pvc_name: str, namespace: str) -> str:
+        """Return a PVC name for the restore, using a timestamped fallback if needed."""
+        check = subprocess.run(
+            [
+                "sudo",
+                "k8s",
+                "kubectl",
+                "get",
+                "pvc",
+                source_pvc_name,
+                "-n",
+                namespace,
+                "--ignore-not-found",
+                "-o",
+                "jsonpath={.metadata.name}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.stdout.strip():
+            ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+            restored = f"{source_pvc_name}-restored-{ts}"
+            logger.info("PVC '%s' already exists — restoring as '%s'", source_pvc_name, restored)
+            return restored
+        return source_pvc_name
+
+    def snapshot_restore(
+        self, snapshot_name: str, namespace: str, size: str | None = None
+    ) -> dict:
+        """Restore a VolumeSnapshot to a new PVC.
+
+        Looks up the snapshot to find its source PVC name and storage size.
+        Size resolution order (first wins):
+        1. ``size`` argument (caller override).
+        2. ``manila-csi/storage-size`` annotation written by ``snapshot_create``.
+        3. Hard default ``"10Gi"``.
+
+        Storage class is always ``manila-nfs`` (hardcoded in the manifest template).
+
+        If a PVC with the original name already exists the restored PVC is named
+        ``{original_name}-restored-{datetime}``.
+
+        Args:
+            snapshot_name: Name of the VolumeSnapshot to restore.
+            namespace: Namespace where the snapshot lives.
+            size: Optional storage size override (e.g. ``"20Gi"``).
+
+        Returns:
+            Dict with keys: pvc_name, namespace.
+
+        Raises:
+            RuntimeError: If the snapshot cannot be found or PVC creation fails.
+        """
+        snapshots = self.snapshot_list(snapshot_name=snapshot_name, namespace=namespace)
+        if not snapshots:
+            raise RuntimeError(f"Snapshot '{snapshot_name}' not found in namespace '{namespace}'.")
+        snap = snapshots[0]
+        source_pvc_name = snap["pvc_name"]
+        if not source_pvc_name:
+            raise RuntimeError(
+                f"Snapshot '{snapshot_name}' has no source PVC recorded in its spec."
+            )
+
+        # Read full snapshot object for annotations and bound content name
+        snap_result = subprocess.run(
+            [
+                "sudo",
+                "k8s",
+                "kubectl",
+                "get",
+                "volumesnapshot",
+                snapshot_name,
+                "-n",
+                namespace,
+                "-o",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        snap_data = yaml.safe_load(snap_result.stdout) if snap_result.returncode == 0 else {}
+        annotations = snap_data.get("metadata", {}).get("annotations", {})
+
+        resolved_size = size or annotations.get("manila-csi/storage-size") or "10Gi"
+
+        restored_pvc_name = self._resolve_restore_pvc_name(source_pvc_name, namespace)
+
+        manifest_template = self.manifests_dir / "snapshot-restore-pvc.yaml"
+        if not manifest_template.exists():
+            raise RuntimeError(f"Restore PVC manifest template not found at {manifest_template}.")
+        with open(manifest_template, encoding="utf-8") as f:
+            template = f.read()
+
+        manifest = (
+            template.replace("{{PVC_NAME}}", restored_pvc_name)
+            .replace("{{PVC_NAMESPACE}}", namespace)
+            .replace("{{SNAPSHOT_NAME}}", snapshot_name)
+            .replace("{{STORAGE_SIZE}}", resolved_size)
+        )
+
+        apply_result = subprocess.run(
+            ["sudo", "k8s", "kubectl", "apply", "-f", "-"],
+            input=manifest,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if apply_result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to create restore PVC '{restored_pvc_name}': "
+                f"{apply_result.stderr.strip()}"
+            )
+
+        logger.info(
+            "Restored snapshot '%s' to PVC '%s' in namespace '%s'",
+            snapshot_name,
+            restored_pvc_name,
+            namespace,
+        )
+        return {"pvc_name": restored_pvc_name, "namespace": namespace}

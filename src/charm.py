@@ -41,6 +41,7 @@ class ManilaCsiCharm(ops.CharmBase):
         framework.observe(self.on.snapshot_list_action, self._on_snapshot_list)
         framework.observe(self.on.snapshot_delete_action, self._on_snapshot_delete)
         framework.observe(self.on.snapshot_delete_all_action, self._on_snapshot_delete_all)
+        framework.observe(self.on.snapshot_restore_action, self._on_snapshot_restore)
 
     def _on_install(self, event: ops.InstallEvent) -> None:
         """Handle install event."""
@@ -192,6 +193,25 @@ class ManilaCsiCharm(ops.CharmBase):
                         f"snapshot: {s['snapshot_name']} | namespace: {s['namespace']}"
                         for s in deleted
                     ),
+                }
+            )
+        except RuntimeError as e:
+            event.fail(str(e))
+
+    def _on_snapshot_restore(self, event: ops.ActionEvent) -> None:
+        """Handle snapshot-restore action."""
+        snapshot_name = event.params["snapshot-name"]
+        namespace = event.params["namespace"]
+        size = event.params.get("size") or None
+        try:
+            result = self.manager.snapshot_restore(
+                snapshot_name=snapshot_name,
+                namespace=namespace,
+                size=size,
+            )
+            event.set_results(
+                {
+                    "restored": (f"pvc: {result['pvc_name']} | namespace: {result['namespace']}"),
                 }
             )
         except RuntimeError as e:
