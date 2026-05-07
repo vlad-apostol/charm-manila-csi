@@ -140,6 +140,9 @@ class ManilaCsiManager:
         # 5. Create storage class
         self._create_storage_class(config)
 
+        # 6. Create VolumeSnapshotClass
+        self._create_volume_snapshot_class()
+
         logger.info("Manila CSI configuration complete")
 
     def remove(self, config: dict[str, Any]) -> None:
@@ -165,6 +168,9 @@ class ManilaCsiManager:
 
         # Remove the openstack-manila-secret created during configure
         self._delete_secret(self.MANILA_SECRET_NAME, namespace)
+
+        # Remove the VolumeSnapshotClass created during configure
+        self._delete_volume_snapshot_class()
 
         logger.info("Manila CSI components removed")
 
@@ -416,7 +422,7 @@ class ManilaCsiManager:
                 "os-domainName": b64(domain_name),
                 "os-password": b64(global_cfg.get("password", "")),
                 "os-userName": b64(global_cfg.get("username", "")),
-                "os-projectDomainName": b64(global_cfg.get("tenant -domain-name", domain_name)),
+                "os-projectDomainName": b64(global_cfg.get("tenant-domain-name", domain_name)),
                 "os-projectName": b64(global_cfg.get("tenant-name", "")),
                 "os-region": b64(global_cfg.get("region", "")),
             },
@@ -738,3 +744,42 @@ class ManilaCsiManager:
             time.sleep(10)
 
         logger.warning("Deployment did not become ready within %s seconds", timeout)
+
+    def _create_volume_snapshot_class(self) -> None:
+        """Create a VolumeSnapshotClass for Manila CSI."""
+        vsc_manifest = self.manifests_dir / "volume-snapshot-class.yaml"
+        if not vsc_manifest.exists():
+            logger.warning(
+                "VolumeSnapshotClass manifest not found at %s, skipping creation",
+                vsc_manifest,
+            )
+            return
+
+        try:
+            result = subprocess.run(
+                ["sudo", "k8s", "kubectl", "apply", "-f", str(vsc_manifest)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            logger.info("VolumeSnapshotClass created/updated")
+            logger.debug("VolumeSnapshotClass creation: %s", result.stdout)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to create VolumeSnapshotClass: {e.stderr}") from e
+
+    def _delete_volume_snapshot_class(self) -> None:
+        """Delete the VolumeSnapshotClass created during configure."""
+        logger.info("Deleting VolumeSnapshotClass 'manila-csi-snapshot-class'")
+        subprocess.run(
+            [
+                "sudo",
+                "k8s",
+                "kubectl",
+                "delete",
+                "volumesnapshotclass",
+                "manila-csi-snapshot-class",
+                "--ignore-not-found",
+            ],
+            capture_output=True,
+            check=False,
+        )

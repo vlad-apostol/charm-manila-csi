@@ -83,7 +83,7 @@ node:
   #       memory: 20Mi
 
 externalSnapshotter:
-  enabled: false
+  enabled: true
   # deletionPolicy: Delete
 
 # The charm manages the Manila storage class separately. Leave these disabled
