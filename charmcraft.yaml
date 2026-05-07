@@ -205,8 +205,8 @@ actions:
         type: string
         description: |
           Optional storage size override (e.g. "20Gi").
-          If omitted the charm resolves size from the snapshot annotations,
-          VolumeSnapshotContent, or source PVC (falling back to "10Gi").
+          If omitted the charm reads size from the manila-csi/storage-size annotation
+          written at snapshot creation time, falling back to "10Gi".
     required:
       - snapshot-name
       - namespace

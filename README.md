@@ -15,7 +15,8 @@ for workloads. It deploys:
   (bundled chart: `csi-driver-nfs-4.13.2`).
 - **Manila CSI Driver**: Integrates Kubernetes with OpenStack Manila for file share provisioning
   (bundled chart: `openstack-manila-csi-2.35.0`).
-- **Storage Class**: A pre-configured `StorageClass` for Manila-backed persistent volumes.
+- **Storage Class**: A pre-configured `StorageClass` (`manila-nfs`) for Manila-backed persistent volumes.
+- **VolumeSnapshotClass**: A `VolumeSnapshotClass` enabling volume snapshots via the Manila CSI driver.
 - **OpenStack Secret**: Automatically reads the `cloud-controller-config` Kubernetes secret
   created by the OpenStack cloud-controller-manager and creates the `openstack-manila-secret`
   required by the Manila CSI driver.
@@ -29,6 +30,8 @@ Before deploying the charm, the following must be in place:
 - Canonical K8s deployed on top of OpenStack
 - The OpenStack cloud-controller-manager deployed and the `cloud-controller-config` secret
   present in the `kube-system` namespace
+- The backing NFS store must support snapshots
+- OpenStack Manila share type must have `snapshot_support=True` and `create_share_from_snapshot_support=True`
 
 ## Deployment
 
@@ -47,6 +50,7 @@ On `config-changed`, the charm will:
 4. Deploy the NFS CSI Helm chart (if `deploy-nfs-csi=true`).
 5. Deploy the Manila CSI Helm chart.
 6. Create the `StorageClass`.
+7. Create the `VolumeSnapshotClass`.
 
 ## Configuration
 
@@ -86,6 +90,129 @@ considerations**:
 ```bash
 # Disable NFS CSI deployment when it is already present in the cluster
 juju config manila-csi deploy-nfs-csi=false
+```
+
+## Volume Snapshots
+
+The charm automatically enables volume snapshotting by deploying:
+
+- The external snapshot controller and CRDs (`VolumeSnapshot`, `VolumeSnapshotContent`,
+  `VolumeSnapshotClass`) via the NFS CSI chart (`externalSnapshotter.enabled: true`).
+- A `VolumeSnapshotClass` named `manila-csi-snapshot-class` using the Manila CSI driver.
+
+Snapshots are managed via Juju actions (see [Actions](#actions) below).
+
+> **Note**: The external snapshot controller is a cluster-wide singleton. If another operator
+> has already deployed it, set `deploy-nfs-csi=false` to avoid conflicts.
+
+## Actions
+
+### `snapshot-create`
+
+Create a `VolumeSnapshot` for one or all Manila-backed PVCs.
+
+Each snapshot is annotated with `manila-csi/storage-size` (the provisioned size of the source
+PVC at the time of creation) so it can be restored even if the source PVC is later deleted.
+
+```bash
+# Snapshot a specific PVC
+juju run manila-csi/0 snapshot-create pvc-name=manila-nfs-pvc namespace=default
+
+# Snapshot all Manila-backed PVCs across all namespaces
+juju run manila-csi/0 snapshot-create
+```
+
+Output:
+```
+created: 1
+snapshots: snapshot: manila-nfs-pvc-snapshot-20260507155019 | namespace: default
+```
+
+### `snapshot-list`
+
+List `VolumeSnapshot` objects managed by the Manila CSI driver, with optional filters.
+
+```bash
+# List all snapshots
+juju run manila-csi/0 snapshot-list
+
+# Filter by snapshot name
+juju run manila-csi/0 snapshot-list snapshot-name=manila-nfs-pvc-snapshot-20260507155019
+
+# Filter by source PVC and namespace
+juju run manila-csi/0 snapshot-list pvc-name=manila-nfs-pvc namespace=default
+```
+
+Output:
+```
+count: 2
+snapshots: |-
+  snapshot: manila-nfs-pvc-snapshot-20260507155019 | namespace: default
+  snapshot: manila-nfs-pvc-snapshot-20260507160000 | namespace: default
+```
+
+### `snapshot-delete`
+
+Delete a single `VolumeSnapshot` by name.
+
+```bash
+juju run manila-csi/0 snapshot-delete \
+  snapshot-name=manila-nfs-pvc-snapshot-20260507155019 \
+  namespace=default
+```
+
+Output:
+```
+deleted: snapshot: manila-nfs-pvc-snapshot-20260507155019 | namespace: default
+```
+
+### `snapshot-delete-all`
+
+Delete **all** `VolumeSnapshot` objects managed by the Manila CSI driver. Requires explicit
+confirmation via `i-really-mean-it=true`.
+
+```bash
+juju run manila-csi/0 snapshot-delete-all i-really-mean-it=true
+```
+
+Output:
+```
+deleted: 2
+snapshots: |-
+  snapshot: manila-nfs-pvc-snapshot-20260507155019 | namespace: default
+  snapshot: manila-nfs-pvc-snapshot-20260507160000 | namespace: default
+```
+
+### `snapshot-restore`
+
+Restore a `VolumeSnapshot` to a new PVC in the same namespace. The restored PVC uses the
+`manila-nfs` storage class.
+
+- If the original PVC **does not exist**, it is recreated with the original name.
+- If the original PVC **already exists**, the restored PVC is named
+  `{original-name}-restored-{datetime}`.
+
+Storage size is resolved in this order:
+1. `size` parameter (explicit override).
+2. `manila-csi/storage-size` annotation on the snapshot (written at create time).
+3. Hard default `10Gi`.
+
+```bash
+# Restore using the annotated size
+juju run manila-csi/0 snapshot-restore \
+  snapshot-name=manila-nfs-pvc-snapshot-20260507155019 \
+  namespace=default
+
+# Restore with an explicit size override
+juju run manila-csi/0 snapshot-restore \
+  snapshot-name=manila-nfs-pvc-snapshot-20260507155019 \
+  namespace=default \
+  size=20Gi
+```
+
+Output:
+```
+restored: pvc: manila-nfs-pvc | namespace: default
 ```
 
 ## Helm Chart Resources
