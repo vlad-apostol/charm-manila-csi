@@ -37,6 +37,10 @@ class ManilaCsiCharm(ops.CharmBase):
         framework.observe(self.on.config_changed, self._on_config_changed)
         framework.observe(self.on.update_status, self._on_update_status)
         framework.observe(self.on.remove, self._on_remove)
+        framework.observe(self.on.snapshot_create_action, self._on_snapshot_create)
+        framework.observe(self.on.snapshot_list_action, self._on_snapshot_list)
+        framework.observe(self.on.snapshot_delete_action, self._on_snapshot_delete)
+        framework.observe(self.on.snapshot_delete_all_action, self._on_snapshot_delete_all)
 
     def _on_install(self, event: ops.InstallEvent) -> None:
         """Handle install event."""
@@ -115,6 +119,83 @@ class ManilaCsiCharm(ops.CharmBase):
             self.manager.remove(config)
         except Exception as e:
             logger.error("Removal failed: %s", e)
+
+    def _on_snapshot_create(self, event: ops.ActionEvent) -> None:
+        """Handle snapshot-create action."""
+        pvc_name = event.params.get("pvc-name") or None
+        namespace = event.params.get("namespace") or None
+        try:
+            created = self.manager.snapshot_create(pvc_name=pvc_name, namespace=namespace)
+            event.set_results(
+                {
+                    "created": len(created),
+                    "snapshots": "\n".join(
+                        f"snapshot: {s['snapshot_name']} | namespace: {s['namespace']}"
+                        for s in created
+                    ),
+                }
+            )
+        except RuntimeError as e:
+            event.fail(str(e))
+
+    def _on_snapshot_list(self, event: ops.ActionEvent) -> None:
+        """Handle snapshot-list action."""
+        snapshot_name = event.params.get("snapshot-name") or None
+        pvc_name = event.params.get("pvc-name") or None
+        namespace = event.params.get("namespace") or None
+        try:
+            snapshots = self.manager.snapshot_list(
+                snapshot_name=snapshot_name, pvc_name=pvc_name, namespace=namespace
+            )
+            if not snapshots:
+                event.set_results({"snapshots": "No Manila CSI snapshots found."})
+                return
+            event.set_results(
+                {
+                    "count": len(snapshots),
+                    "snapshots": "\n".join(
+                        f"snapshot: {s['snapshot_name']} | namespace: {s['namespace']}"
+                        for s in snapshots
+                    ),
+                }
+            )
+        except RuntimeError as e:
+            event.fail(str(e))
+
+    def _on_snapshot_delete(self, event: ops.ActionEvent) -> None:
+        """Handle snapshot-delete action (single snapshot)."""
+        snapshot_name = event.params["snapshot-name"]
+        namespace = event.params["namespace"]
+        try:
+            deleted = self.manager.snapshot_delete(
+                snapshot_name=snapshot_name,
+                namespace=namespace,
+            )
+            s = deleted[0]
+            event.set_results(
+                {
+                    "deleted": f"snapshot: {s['snapshot_name']} | namespace: {s['namespace']}",
+                }
+            )
+        except RuntimeError as e:
+            event.fail(str(e))
+
+    def _on_snapshot_delete_all(self, event: ops.ActionEvent) -> None:
+        """Handle snapshot-delete-all action (bulk delete with confirmation)."""
+        i_really_mean_it = bool(event.params.get("i-really-mean-it", False))
+        try:
+            deleted = self.manager.snapshot_delete(i_really_mean_it=i_really_mean_it)
+            event.set_results(
+                {
+                    "deleted": len(deleted),
+                    "snapshots": "\n".join(
+                        f"snapshot: {s['snapshot_name']} | namespace: {s['namespace']}"
+                        for s in deleted
+                    ),
+                }
+            )
+        except RuntimeError as e:
+            event.fail(str(e))
 
 
 if __name__ == "__main__":  # pragma: nocover

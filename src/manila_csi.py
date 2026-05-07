@@ -5,6 +5,7 @@
 
 import base64
 import configparser
+import datetime
 import logging
 import subprocess
 import time
@@ -783,3 +784,246 @@ class ManilaCsiManager:
             capture_output=True,
             check=False,
         )
+
+    # -------------------------------------------------------------------------
+    # Snapshot actions
+    # -------------------------------------------------------------------------
+
+    def _manila_pvcs(self, namespace: str | None) -> list[dict]:
+        """Return PVCs whose storageClassName uses the Manila CSI provisioner.
+
+        Args:
+            namespace: Limit to this namespace, or None for all namespaces.
+
+        Returns:
+            List of PVC dicts with keys: name, namespace.
+
+        Raises:
+            RuntimeError: If kubectl fails.
+        """
+        cmd = ["sudo", "k8s", "kubectl", "get", "pvc", "-o", "json"]
+        if namespace:
+            cmd.extend(["-n", namespace])
+        else:
+            cmd.append("--all-namespaces")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to list PVCs: {result.stderr.strip()}")
+
+        data = yaml.safe_load(result.stdout) or {}
+        pvcs = []
+        for item in data.get("items", []):
+            sc = item.get("spec", {}).get("storageClassName", "")
+            # Identify Manila-backed PVCs by the storage class name configured for this charm.
+            # We match any StorageClass whose provisioner is the Manila CSI driver.
+            if sc:
+                # Fetch the StorageClass to check the provisioner
+                sc_result = subprocess.run(
+                    [
+                        "sudo",
+                        "k8s",
+                        "kubectl",
+                        "get",
+                        "storageclass",
+                        sc,
+                        "-o",
+                        "jsonpath={.provisioner}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                provisioner = sc_result.stdout.strip()
+                if provisioner == "nfs.manila.csi.openstack.org":
+                    meta = item.get("metadata", {})
+                    pvcs.append({"name": meta.get("name"), "namespace": meta.get("namespace")})
+        return pvcs
+
+    def snapshot_create(
+        self, pvc_name: str | None = None, namespace: str | None = None
+    ) -> list[dict]:
+        """Create VolumeSnapshot(s) for Manila-backed PVC(s).
+
+        Args:
+            pvc_name: PVC to snapshot. If None, all Manila-backed PVCs are snapshotted.
+            namespace: Namespace of the PVC. If None, all namespaces are searched.
+
+        Returns:
+            List of dicts with keys: snapshot_name, namespace.
+
+        Raises:
+            RuntimeError: On kubectl failure or if the specified PVC is not found/Manila-backed.
+        """
+        if pvc_name:
+            if not namespace:
+                raise RuntimeError("namespace is required when pvc-name is specified.")
+            pvcs = [{"name": pvc_name, "namespace": namespace}]
+            # Verify it is Manila-backed
+            manila_pvcs = self._manila_pvcs(namespace)
+            names = [p["name"] for p in manila_pvcs]
+            if pvc_name not in names:
+                raise RuntimeError(
+                    f"PVC '{pvc_name}' in namespace '{namespace}' is not backed "
+                    "by the Manila CSI driver, or does not exist."
+                )
+        else:
+            pvcs = self._manila_pvcs(namespace)
+            if not pvcs:
+                raise RuntimeError("No Manila-backed PVCs found.")
+
+        manifest_template = self.manifests_dir / "volume-snapshot.yaml"
+        if not manifest_template.exists():
+            raise RuntimeError(
+                f"VolumeSnapshot manifest template not found at {manifest_template}."
+            )
+        with open(manifest_template, encoding="utf-8") as f:
+            template = f.read()
+
+        created: list[dict] = []
+
+        for pvc in pvcs:
+            ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+            snapshot_name = f"{pvc['name']}-snapshot-{ts}"
+            manifest = (
+                template.replace("{{SNAPSHOT_NAME}}", snapshot_name)
+                .replace("{{SNAPSHOT_NAMESPACE}}", pvc["namespace"])
+                .replace("{{SOURCE_PVC}}", pvc["name"])
+            )
+            apply_result = subprocess.run(
+                ["sudo", "k8s", "kubectl", "apply", "-f", "-"],
+                input=manifest,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if apply_result.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to create snapshot for PVC '{pvc['name']}' "
+                    f"in namespace '{pvc['namespace']}': {apply_result.stderr.strip()}"
+                )
+            created.append({"snapshot_name": snapshot_name, "namespace": pvc["namespace"]})
+            logger.info("Created snapshot '%s' in namespace '%s'", snapshot_name, pvc["namespace"])
+        return created
+
+    def snapshot_list(
+        self,
+        snapshot_name: str | None = None,
+        pvc_name: str | None = None,
+        namespace: str | None = None,
+    ) -> list[dict]:
+        """List VolumeSnapshots for Manila-backed PVCs.
+
+        Args:
+            snapshot_name: Return only the snapshot with this exact name.
+            pvc_name: Filter by source PVC name. If None, lists all Manila CSI snapshots.
+            namespace: Limit to this namespace. If None, all namespaces are searched.
+
+        Returns:
+            List of dicts with keys: snapshot_name, namespace, pvc_name, ready, creation_time.
+
+        Raises:
+            RuntimeError: On kubectl failure.
+        """
+        cmd = ["sudo", "k8s", "kubectl", "get", "volumesnapshot", "-o", "json"]
+        if namespace:
+            cmd.extend(["-n", namespace])
+        else:
+            cmd.append("--all-namespaces")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to list VolumeSnapshots: {result.stderr.strip()}")
+
+        data = yaml.safe_load(result.stdout) or {}
+        snapshots = []
+        for item in data.get("items", []):
+            spec = item.get("spec", {})
+            # Only include snapshots using the Manila snapshot class
+            if spec.get("volumeSnapshotClassName") != "manila-csi-snapshot-class":
+                continue
+            meta = item.get("metadata", {})
+            if snapshot_name and meta.get("name") != snapshot_name:
+                continue
+            source_pvc = spec.get("source", {}).get("persistentVolumeClaimName", "")
+            if pvc_name and source_pvc != pvc_name:
+                continue
+            status = item.get("status", {})
+            snapshots.append(
+                {
+                    "snapshot_name": meta.get("name"),
+                    "namespace": meta.get("namespace"),
+                    "pvc_name": source_pvc,
+                    "ready": status.get("readyToUse", False),
+                    "creation_time": meta.get("creationTimestamp"),
+                }
+            )
+        return snapshots
+
+    def snapshot_delete(
+        self,
+        snapshot_name: str | None = None,
+        namespace: str | None = None,
+        i_really_mean_it: bool = False,
+    ) -> list[dict]:
+        """Delete VolumeSnapshot(s).
+
+        When snapshot_name is given, deletes that single snapshot (namespace required).
+        When snapshot_name is None, deletes all Manila CSI snapshots (i_really_mean_it required).
+
+        Args:
+            snapshot_name: Name of the snapshot to delete. None means delete all.
+            namespace: Namespace of the snapshot. Required when snapshot_name is given.
+            i_really_mean_it: Must be True when deleting all snapshots.
+
+        Returns:
+            List of dicts with keys: snapshot_name, namespace for each deleted snapshot.
+
+        Raises:
+            RuntimeError: On validation failure or kubectl error.
+        """
+        if snapshot_name:
+            targets = [{"snapshot_name": snapshot_name, "namespace": namespace}]
+        else:
+            if not i_really_mean_it:
+                raise RuntimeError(
+                    "Refusing to delete all snapshots. "
+                    "Set i-really-mean-it=true to confirm bulk deletion."
+                )
+            targets = [
+                {"snapshot_name": s["snapshot_name"], "namespace": s["namespace"]}
+                for s in self.snapshot_list()
+            ]
+            if not targets:
+                raise RuntimeError("No Manila CSI snapshots found to delete.")
+
+        deleted: list[dict] = []
+        for target in targets:
+            result = subprocess.run(
+                [
+                    "sudo",
+                    "k8s",
+                    "kubectl",
+                    "delete",
+                    "volumesnapshot",
+                    target["snapshot_name"],
+                    "-n",
+                    target["namespace"],
+                    "--ignore-not-found",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to delete snapshot '{target['snapshot_name']}' "
+                    f"in namespace '{target['namespace']}': {result.stderr.strip()}"
+                )
+            deleted.append(target)
+            logger.info(
+                "Deleted snapshot '%s' from namespace '%s'",
+                target["snapshot_name"],
+                target["namespace"],
+            )
+        return deleted

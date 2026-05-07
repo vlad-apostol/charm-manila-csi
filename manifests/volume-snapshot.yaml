@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: {{SNAPSHOT_NAME}}
+  namespace: {{SNAPSHOT_NAMESPACE}}
+spec:
+  volumeSnapshotClassName: manila-csi-snapshot-class
+  source:
+    persistentVolumeClaimName: {{SOURCE_PVC}}

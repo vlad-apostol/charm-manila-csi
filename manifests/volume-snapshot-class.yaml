@@ -7,5 +7,5 @@ metadata:
 driver: nfs.manila.csi.openstack.org
 deletionPolicy: Delete
 parameters:
-  csiSnapshotterSecretName: openstack-manila-secret
-  csiSnapshotterSecretNamespace: kube-system
+    csi.storage.k8s.io/snapshotter-secret-name: openstack-manila-secret
+    csi.storage.k8s.io/snapshotter-secret-namespace: kube-system

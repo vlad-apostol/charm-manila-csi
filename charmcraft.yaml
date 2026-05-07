@@ -131,5 +131,60 @@ resources:
     type: file
     filename: nfs-csi-chart.tgz
 
+actions:
+  snapshot-create:
+    description: |
+      Create VolumeSnapshot(s) for PVCs backed by the Manila CSI driver.
+      If no pvc-name is given, snapshots every Manila-backed PVC in the cluster.
+    params:
+      pvc-name:
+        type: string
+        description: Name of the PVC to snapshot. Omit to snapshot all Manila-backed PVCs.
+      namespace:
+        type: string
+        description: |
+          Namespace of the PVC. Required when pvc-name is specified.
+          Omit to search all namespaces.
+
+  snapshot-list:
+    description: |
+      List VolumeSnapshots created by the Manila CSI driver.
+      Filter by snapshot-name, pvc-name, or namespace. Omit all to list everything.
+    params:
+      snapshot-name:
+        type: string
+        description: Show only the snapshot with this exact name.
+      pvc-name:
+        type: string
+        description: Filter snapshots by source PVC name.
+      namespace:
+        type: string
+        description: Limit listing to a specific namespace.
+
+  snapshot-delete:
+    description: Delete a single VolumeSnapshot by name.
+    params:
+      snapshot-name:
+        type: string
+        description: Name of the snapshot to delete.
+      namespace:
+        type: string
+        description: Namespace the snapshot lives in.
+    required:
+      - snapshot-name
+      - namespace
+
+  snapshot-delete-all:
+    description: |
+      Delete ALL VolumeSnapshots managed by the Manila CSI driver.
+      Requires i-really-mean-it=true as an explicit confirmation.
+    params:
+      i-really-mean-it:
+        type: boolean
+        description: Must be set to true to confirm bulk deletion.
+        default: false
+    required:
+      - i-really-mean-it
+
 assumes:
   - juju >= 3.0
