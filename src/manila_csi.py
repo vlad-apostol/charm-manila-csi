@@ -812,32 +812,26 @@ class ManilaCsiManager:
             raise RuntimeError(f"Failed to list PVCs: {result.stderr.strip()}")
 
         data = yaml.safe_load(result.stdout) or {}
+
+        # Fetch all StorageClasses once and build a provisioner lookup
+        sc_result = subprocess.run(
+            ["sudo", "k8s", "kubectl", "get", "storageclass", "-o", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        sc_data = yaml.safe_load(sc_result.stdout) or {} if sc_result.returncode == 0 else {}
+        provisioner_by_sc: dict[str, str] = {
+            item.get("metadata", {}).get("name", ""): item.get("provisioner", "")
+            for item in sc_data.get("items", [])
+        }
+
         pvcs = []
         for item in data.get("items", []):
             sc = item.get("spec", {}).get("storageClassName", "")
-            # Identify Manila-backed PVCs by the storage class name configured for this charm.
-            # We match any StorageClass whose provisioner is the Manila CSI driver.
-            if sc:
-                # Fetch the StorageClass to check the provisioner
-                sc_result = subprocess.run(
-                    [
-                        "sudo",
-                        "k8s",
-                        "kubectl",
-                        "get",
-                        "storageclass",
-                        sc,
-                        "-o",
-                        "jsonpath={.provisioner}",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                provisioner = sc_result.stdout.strip()
-                if provisioner == "nfs.manila.csi.openstack.org":
-                    meta = item.get("metadata", {})
-                    pvcs.append({"name": meta.get("name"), "namespace": meta.get("namespace")})
+            if sc and provisioner_by_sc.get(sc) == "nfs.manila.csi.openstack.org":
+                meta = item.get("metadata", {})
+                pvcs.append({"name": meta.get("name"), "namespace": meta.get("namespace")})
         return pvcs
 
     def snapshot_create(
@@ -1082,7 +1076,8 @@ class ManilaCsiManager:
         return source_pvc_name
 
     def snapshot_restore(
-        self, snapshot_name: str, namespace: str, size: str | None = None
+        self, snapshot_name: str, namespace: str, size: str | None = None,
+        storage_class_name: str = "manila-nfs"
     ) -> dict:
         """Restore a VolumeSnapshot to a new PVC.
 
@@ -1092,8 +1087,6 @@ class ManilaCsiManager:
         2. ``manila-csi/storage-size`` annotation written by ``snapshot_create``.
         3. Hard default ``"10Gi"``.
 
-        Storage class is always ``manila-nfs`` (hardcoded in the manifest template).
-
         If a PVC with the original name already exists the restored PVC is named
         ``{original_name}-restored-{datetime}``.
 
@@ -1101,7 +1094,7 @@ class ManilaCsiManager:
             snapshot_name: Name of the VolumeSnapshot to restore.
             namespace: Namespace where the snapshot lives.
             size: Optional storage size override (e.g. ``"20Gi"``).
-
+            storage_class_name: StorageClass to use for the restored PVC.
         Returns:
             Dict with keys: pvc_name, namespace.
 
@@ -1154,6 +1147,7 @@ class ManilaCsiManager:
             .replace("{{PVC_NAMESPACE}}", namespace)
             .replace("{{SNAPSHOT_NAME}}", snapshot_name)
             .replace("{{STORAGE_SIZE}}", resolved_size)
+            .replace("{{STORAGE_CLASS_NAME}}", storage_class_name)
         )
 
         apply_result = subprocess.run(
