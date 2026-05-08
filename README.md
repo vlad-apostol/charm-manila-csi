@@ -41,7 +41,7 @@ This is a principal charm. Deploy it co-located with a Kubernetes control plane 
 juju deploy manila-csi --to $MACHINE_ID
 ```
 
-On `config-changed`, the charm will:
+The charm will:
 
 1. Wait for the Kubernetes cluster to be ready.
 2. Create (or ensure) the target namespace.
@@ -60,7 +60,7 @@ until the application is removed.
 
 | Option | Default | Mutable | Description |
 |---|---|---|---|
-| `manila-share-protocol` | `cephfsnfs` | ✅ | Manila share protocol selector for the storage class (`CEPHFS`, `NFS`, or `cephfsnfs`). |
+| `manila-share-protocol` | `cephfsnfstype` | ✅ | Manila share protocol selector for the storage class (`CEPHFS`, `NFS`, or `cephfsnfstype`). |
 | `cloud-controller-config-secret` | `cloud-controller-config` | ✅ | Name of the source Kubernetes secret containing OpenStack credentials in `cloud.conf` format. |
 | `cloud-controller-config-namespace` | `kube-system` | ✅ | Namespace where the source secret lives. |
 | `storage-class-name` | `manila-nfs` | ❌ | Name of the Kubernetes `StorageClass` to create. Renaming creates a new `StorageClass`; the old one is not deleted. |
@@ -68,14 +68,6 @@ until the application is removed.
 | `manila-csi-release-name` | `manila-csi` | ❌ | Helm release name for the Manila CSI driver. Changing it leaves resources from the previous release name in place. |
 | `nfs-csi-release-name` | `nfs-csi` | ❌ | Helm release name for the NFS CSI driver. Changing it leaves resources from the previous release name in place. |
 | `manila-csi-namespace` | `kube-system` | ❌ | Kubernetes namespace for Manila CSI components. Changing it leaves all resources in the old namespace in place. |
-
-```bash
-# Use NFS protocol and a custom storage class name
-juju config manila-csi manila-share-protocol=NFS storage-class-name=manila-nfs
-
-# Use CEPHFS protocol
-juju config manila-csi manila-share-protocol=CEPHFS storage-class-name=manila-cephfs
-```
 
 ### NFS CSI Driver Deployment
 
@@ -86,11 +78,6 @@ considerations**:
 - If NFS CSI is already deployed by another application or charm, set `deploy-nfs-csi=false`
   **before deploying** to avoid conflicts. Changing this option after deploy has no effect on
   an already-running NFS CSI driver.
-
-```bash
-# Disable NFS CSI deployment when it is already present in the cluster
-juju config manila-csi deploy-nfs-csi=false
-```
 
 ## Volume Snapshots
 
