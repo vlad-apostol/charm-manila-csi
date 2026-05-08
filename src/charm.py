@@ -2,7 +2,7 @@
 # Copyright 2026 vlad.apostol@canonical.com
 # See LICENSE file for licensing details.
 
-"""Manila CSI subordinate charm for Kubernetes
+"""Manila CSI principal charm for Kubernetes
 integration with OpenStack Manila.
 """
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ManilaCsiCharm(ops.CharmBase):
-    """Manila CSI subordinate charm.
+    """Manila CSI principal charm.
 
     This charm deploys the Manila CSI and optionally NFS CSI drivers to enable
     Kubernetes clusters to use OpenStack Manila
@@ -208,6 +208,7 @@ class ManilaCsiCharm(ops.CharmBase):
                 snapshot_name=snapshot_name,
                 namespace=namespace,
                 size=size,
+                storage_class_name=str(self.config["storage-class-name"]),
             )
             event.set_results(
                 {
