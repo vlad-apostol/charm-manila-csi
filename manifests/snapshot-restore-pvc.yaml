@@ -4,7 +4,7 @@ metadata:
   name: {{PVC_NAME}}
   namespace: {{PVC_NAMESPACE}}
 spec:
-  storageClassName: manila-nfs
+  storageClassName: {{STORAGE_CLASS_NAME}}
   dataSource:
     name: {{SNAPSHOT_NAME}}
     kind: VolumeSnapshot
