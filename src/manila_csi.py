@@ -1076,8 +1076,11 @@ class ManilaCsiManager:
         return source_pvc_name
 
     def snapshot_restore(
-        self, snapshot_name: str, namespace: str, size: str | None = None,
-        storage_class_name: str = "manila-nfs"
+        self,
+        snapshot_name: str,
+        namespace: str,
+        size: str | None = None,
+        storage_class_name: str = "manila-nfs",
     ) -> dict:
         """Restore a VolumeSnapshot to a new PVC.
 
@@ -1093,7 +1096,7 @@ class ManilaCsiManager:
         Args:
             snapshot_name: Name of the VolumeSnapshot to restore.
             namespace: Namespace where the snapshot lives.
-            size: Optional storage size override (e.g. ``"20Gi"``).
+            size: Optional storage size override (e.g. ``"20Gi"``). Already formatted with unit.
             storage_class_name: StorageClass to use for the restored PVC.
         Returns:
             Dict with keys: pvc_name, namespace.

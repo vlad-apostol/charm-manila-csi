@@ -202,12 +202,13 @@ class ManilaCsiCharm(ops.CharmBase):
         """Handle snapshot-restore action."""
         snapshot_name = event.params["snapshot-name"]
         namespace = event.params["namespace"]
-        size = event.params.get("size") or None
+        size = event.params.get("size")
+        size_str = f"{size}Gi" if size is not None else None
         try:
             result = self.manager.snapshot_restore(
                 snapshot_name=snapshot_name,
                 namespace=namespace,
-                size=size,
+                size=size_str,
                 storage_class_name=str(self.config["storage-class-name"]),
             )
             event.set_results(
