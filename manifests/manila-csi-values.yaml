@@ -1,0 +1,36 @@
+shareProtocols:
+  - protocolSelector: NFS
+    fsGroupPolicy: None
+    fwdNodePluginEndpoint:
+      dir: /var/lib/kubelet/plugins/csi-nfsplugin
+      sockFile: csi.sock
+  # - protocolSelector: CEPHFS
+  #   fsGroupPolicy: None
+  #   fwdNodePluginEndpoint:
+  #     dir: /var/lib/kubelet/plugins/cephfs.csi.ceph.com
+  #     sockFile: csi.sock
+
+csimanila:
+  pvcAnnotations: true
+
+controllerplugin:
+  volumes: 
+    - name: cloud-config
+      secret:
+        defaultMode: 0420
+        secretName: cloud-controller-config
+  volumeMounts:
+    - mountPath: /etc/config
+      name: cloud-config
+      readOnly: true
+
+nodeplugin:   
+  volumes:
+    - name: cloud-config
+      secret:
+        defaultMode: 0420
+        secretName: cloud-controller-config
+  volumeMounts:
+    - mountPath: /etc/config  
+      name: cloud-config
+      readOnly: true  
